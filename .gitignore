@@ -57,7 +57,7 @@ pids
 .eslintcache
 
 # Uploads (if these are user uploads, they shouldn't be in git)
-/public/uploads/
+# /public/uploads/
 
 # Database files (if these contain sensitive data)
-/data/ 
+# /data/ 

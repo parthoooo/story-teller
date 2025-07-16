@@ -1,0 +1,20 @@
+[
+  {
+    "timestamp": "2025-07-15T11:47:56.633Z",
+    "eventType": "submission_completed",
+    "submissionId": "7599861f-987e-4665-b8e8-e3245bf3f8b7",
+    "hasAudio": true,
+    "hasFiles": false,
+    "hasText": true,
+    "fileCount": 0
+  },
+  {
+    "timestamp": "2025-07-15T11:59:45.803Z",
+    "eventType": "submission_completed",
+    "submissionId": "bb2b4ce7-773d-498b-9d39-2208f2c3f124",
+    "hasAudio": true,
+    "hasFiles": false,
+    "hasText": true,
+    "fileCount": 0
+  }
+]
