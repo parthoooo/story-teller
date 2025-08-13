@@ -21,7 +21,18 @@ const SubmissionSchema = new mongoose.Schema({
       format: { type: String, default: '' },
       recordedAt: { type: Date },
       hasRecording: { type: Boolean, default: false },
-      size: { type: Number, default: 0 }
+      size: { type: Number, default: 0 },
+      // Transcript fields
+      transcriptGenerated: { type: Boolean, default: false },
+      fullTranscript: { type: String, default: '' },
+      wordTimings: [{
+        word: { type: String, required: true },
+        startTime: { type: Number, required: true },
+        endTime: { type: Number, required: true },
+        confidence: { type: Number, default: 0.9 }
+      }],
+      transcriptConfidence: { type: Number, default: 0 },
+      transcriptGeneratedAt: { type: Date }
     },
     uploadedFiles: [{
       filename: String,

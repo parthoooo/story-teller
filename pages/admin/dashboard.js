@@ -156,6 +156,182 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteSubmission = async (submissionId, submissionName) => {
+    // Confirm deletion
+    const confirmMessage = `Are you sure you want to DELETE this submission?\n\nSubmission: ${submissionName}\nID: ${submissionId}\n\nThis will permanently delete:\n- The submission from the database\n- All associated audio files\n- All uploaded files\n\nThis action cannot be undone!`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('adminToken');
+      
+      const response = await fetch('/api/admin/submissions/delete-submission', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ submissionId })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log('✅ Submission deleted:', data);
+        
+        // Show success message
+        alert(`Submission deleted successfully!\n\nFiles deleted: ${data.deletedFiles.length}\nFiles failed: ${data.failedFiles.length}`);
+        
+        // Remove from local state
+        setSubmissions(prev => prev.filter(sub => sub._id !== submissionId));
+        
+        // Refresh the data to get updated stats
+        await loadSubmissions();
+      } else {
+        console.error('Failed to delete submission:', data.error);
+        setError(data.error || 'Failed to delete submission');
+      }
+    } catch (error) {
+      console.error('Error deleting submission:', error);
+      setError('Network error. Please try again.');
+    }
+  };
+
+  const handleTranscriptChange = (submissionId, transcript) => {
+    setSubmissions(prevSubmissions => 
+      prevSubmissions.map(sub => 
+        sub._id === submissionId 
+          ? { 
+              ...sub, 
+              content: { 
+                ...sub.content, 
+                audioRecording: { 
+                  ...sub.content.audioRecording, 
+                  fullTranscript: transcript 
+                } 
+              } 
+            }
+          : sub
+      )
+    );
+  };
+
+  const generateAITranscript = async (submissionId, audioFilename) => {
+    // Set loading state
+    setSubmissions(prevSubmissions => 
+      prevSubmissions.map(sub => 
+        sub._id === submissionId ? { ...sub, _generating: true } : sub
+      )
+    );
+
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch('/api/admin/generate-ai-transcript', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          submissionId,
+          audioFilename
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`AI Transcript generated successfully!\n\nConfidence: ${Math.round((data.confidence || 0) * 100)}%\nWords: ${data.wordCount || 0}`);
+        
+        // Update the local state with the new transcript
+        setSubmissions(prevSubmissions => 
+          prevSubmissions.map(sub => 
+            sub._id === submissionId 
+              ? { 
+                  ...sub, 
+                  _generating: false,
+                  content: { 
+                    ...sub.content, 
+                    audioRecording: { 
+                      ...sub.content.audioRecording, 
+                      transcriptGenerated: true,
+                      fullTranscript: data.transcript,
+                      transcriptConfidence: data.confidence
+                    } 
+                  } 
+                }
+              : sub
+          )
+        );
+      } else {
+        alert(data.error || 'Failed to generate AI transcript');
+        setSubmissions(prevSubmissions => 
+          prevSubmissions.map(sub => 
+            sub._id === submissionId ? { ...sub, _generating: false } : sub
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error generating AI transcript:', error);
+      alert('Error generating AI transcript');
+      setSubmissions(prevSubmissions => 
+        prevSubmissions.map(sub => 
+          sub._id === submissionId ? { ...sub, _generating: false } : sub
+        )
+      );
+    }
+  };
+
+  const saveTranscript = async (submissionId, transcript) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch('/api/submissions/update-transcript', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          submissionId,
+          transcript,
+          wordTimings: [], // Will be auto-generated on homepage
+          confidence: 1.0
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Transcript saved successfully');
+        // Update the local state to mark transcript as generated
+        setSubmissions(prevSubmissions => 
+          prevSubmissions.map(sub => 
+            sub._id === submissionId 
+              ? { 
+                  ...sub, 
+                  content: { 
+                    ...sub.content, 
+                    audioRecording: { 
+                      ...sub.content.audioRecording, 
+                      transcriptGenerated: true,
+                      fullTranscript: transcript
+                    } 
+                  } 
+                }
+              : sub
+          )
+        );
+      } else {
+        alert(data.error || 'Failed to save transcript');
+      }
+    } catch (error) {
+      console.error('Error saving transcript:', error);
+      alert('Error saving transcript');
+    }
+  };
+
   if (loading) {
     return (
       <div className="admin-dashboard">
@@ -267,7 +443,7 @@ export default function AdminDashboard() {
                         </div>
                       )}
 
-                      {submission.content.audioRecording.hasRecording && (
+                      {submission.content.audioRecording && submission.content.audioRecording.hasRecording && (
                         <div className="content-section">
                           <strong>Audio Recording:</strong>
                           <div className="audio-info">
@@ -279,11 +455,61 @@ export default function AdminDashboard() {
                                 </audio>
                                 <p className="file-info">
                                   {submission.content.audioRecording.filename} 
-                                  ({formatFileSize(submission.content.audioRecording.size)})
+                                  ({submission.content.audioRecording.size ? formatFileSize(submission.content.audioRecording.size) : 'Unknown size'}) - 
+                                  Duration: {submission.content.audioRecording.duration || 0}s
                                 </p>
+                                
+                                {/* AI Transcript generation */}
+                                <div className="transcript-section">
+                                  <label><strong>Transcript:</strong></label>
+                                  
+                                  {!submission.content.audioRecording.fullTranscript ? (
+                                    <div className="transcript-generate">
+                                      <p>No transcript yet. Generate one using AI:</p>
+                                      <button 
+                                        onClick={() => generateAITranscript(submission._id, submission.content.audioRecording.filename)}
+                                        className="btn-primary"
+                                        disabled={submission._generating}
+                                      >
+                                        {submission._generating ? '🤖 Generating...' : '🤖 Generate AI Transcript'}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="transcript-edit">
+                                      <textarea
+                                        placeholder="Edit transcript if needed..."
+                                        value={submission.content.audioRecording.fullTranscript || ''}
+                                        onChange={(e) => handleTranscriptChange(submission._id, e.target.value)}
+                                        rows={4}
+                                        className="transcript-input"
+                                      />
+                                      <div className="transcript-actions">
+                                        <button 
+                                          onClick={() => saveTranscript(submission._id, submission.content.audioRecording.fullTranscript || '')}
+                                          className="btn-small btn-primary"
+                                        >
+                                          💾 Save Changes
+                                        </button>
+                                        <button 
+                                          onClick={() => generateAITranscript(submission._id, submission.content.audioRecording.filename)}
+                                          className="btn-small btn-secondary"
+                                          disabled={submission._generating}
+                                        >
+                                          {submission._generating ? '🤖 Regenerating...' : '🔄 Regenerate'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             ) : (
-                              <p>Audio recording available (legacy format)</p>
+                              <div>
+                                <p>Audio recording available (no file saved)</p>
+                                <p className="file-info">
+                                  Duration: {submission.content.audioRecording.duration || 0}s - 
+                                  Format: {submission.content.audioRecording.format || 'Unknown'}
+                                </p>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -339,6 +565,16 @@ export default function AdminDashboard() {
                             disabled={submission.status === 'reviewed'}
                           >
                             {submission.status === 'reviewed' ? '👀 Reviewed' : '📋 Mark as Reviewed'}
+                          </button>
+                          <button 
+                            className="delete-btn"
+                            onClick={() => handleDeleteSubmission(
+                              submission._id, 
+                              `${submission.personalInfo.firstName} ${submission.personalInfo.lastName}`
+                            )}
+                            title="Permanently delete this submission and all associated files"
+                          >
+                            🗑️ Delete
                           </button>
                         </div>
                         
@@ -706,6 +942,98 @@ export default function AdminDashboard() {
         .review-btn:disabled {
           background: #bee3f8;
           color: #2b6cb0;
+          cursor: not-allowed;
+        }
+
+        .delete-btn {
+          background: #e53e3e;
+          color: white;
+        }
+
+        .delete-btn:hover {
+          background: #c53030;
+        }
+
+        .delete-btn:active {
+          background: #9c2626;
+        }
+
+        .transcript-section {
+          margin-top: 15px;
+          padding: 15px;
+          background: #f8f9fa;
+          border-radius: 6px;
+          border: 1px solid #dee2e6;
+        }
+
+        .transcript-input {
+          width: 100%;
+          padding: 8px 12px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-family: inherit;
+          font-size: 14px;
+          margin: 8px 0;
+          resize: vertical;
+        }
+
+        .btn-small {
+          padding: 6px 12px;
+          font-size: 12px;
+          margin-top: 8px;
+        }
+
+        .transcript-generate {
+          text-align: center;
+          padding: 20px;
+          background: #f8f9fa;
+          border: 2px dashed #dee2e6;
+          border-radius: 8px;
+          margin: 10px 0;
+        }
+
+        .transcript-generate p {
+          color: #6c757d;
+          margin-bottom: 15px;
+        }
+
+        .transcript-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 10px;
+        }
+
+        .btn-secondary {
+          background: #6c757d;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          padding: 6px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        }
+
+        .btn-secondary:hover {
+          background: #5a6268;
+        }
+
+        .btn-primary {
+          background: #007bff;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          padding: 8px 16px;
+          cursor: pointer;
+          font-size: 14px;
+        }
+
+        .btn-primary:hover {
+          background: #0056b3;
+        }
+
+        .btn-primary:disabled,
+        .btn-secondary:disabled {
+          opacity: 0.6;
           cursor: not-allowed;
         }
 

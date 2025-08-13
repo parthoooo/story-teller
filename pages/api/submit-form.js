@@ -46,10 +46,25 @@ export default async function handler(req, res) {
 
     // Convert form data to proper format
     const formData = parseFormData(fields);
+    
+    // Add uploadedFiles array for validation (will be processed later)
+    formData.uploadedFiles = files.uploadedFiles ? 
+      (Array.isArray(files.uploadedFiles) ? files.uploadedFiles : [files.uploadedFiles]) : [];
+    
+    // Debug server-side form data
+    console.log('🔧 Server-side Form Data:', {
+      keys: Object.keys(formData),
+      audioRecording: formData.audioRecording ? 'EXISTS' : 'MISSING',
+      audioRecordingType: typeof formData.audioRecording,
+      audioRecordingLength: formData.audioRecording?.length || 0,
+      textStory: formData.textStory ? 'EXISTS' : 'MISSING',
+      uploadedFilesCount: formData.uploadedFiles?.length || 0
+    });
 
     // Validate form data
     const validation = validateForm(formData);
     if (!validation.isValid) {
+      console.log('❌ Server-side validation failed:', validation.errors);
       return res.status(400).json({ 
         error: 'Validation failed', 
         errors: validation.errors 
@@ -88,7 +103,12 @@ export default async function handler(req, res) {
 
     if (formData.audioRecording) {
       try {
-        const audioRecordingData = JSON.parse(formData.audioRecording);
+        // Handle both object and string formats
+        let audioRecordingData = formData.audioRecording;
+        if (typeof formData.audioRecording === 'string') {
+          audioRecordingData = JSON.parse(formData.audioRecording);
+        }
+        
         if (audioRecordingData.blobData) {
           // Convert base64 to buffer
           const audioBuffer = Buffer.from(audioRecordingData.blobData, 'base64');
@@ -116,6 +136,8 @@ export default async function handler(req, res) {
         }
       } catch (error) {
         console.error('❌ Error saving audio recording:', error);
+        // Fallback for basic audio recording tracking
+        audioData.hasRecording = true;
       }
     }
 
@@ -150,6 +172,14 @@ export default async function handler(req, res) {
       status: 'pending'
     });
 
+    // Debug submission data before saving
+    console.log('💾 Saving submission with audioRecording:', {
+      hasRecording: audioData.hasRecording,
+      filename: audioData.filename,
+      duration: audioData.duration,
+      size: audioData.size
+    });
+    
     // Save to MongoDB
     await submission.save();
     
@@ -204,7 +234,18 @@ const parseFormData = (fields) => {
   // Handle single values and arrays
   Object.keys(fields).forEach(key => {
     const value = fields[key];
-    formData[key] = Array.isArray(value) ? value[0] : value;
+    const finalValue = Array.isArray(value) ? value[0] : value;
+    
+    // Special handling for audioRecording JSON string
+    if (key === 'audioRecording' && typeof finalValue === 'string' && finalValue.trim().startsWith('{')) {
+      try {
+        formData[key] = JSON.parse(finalValue);
+      } catch (e) {
+        formData[key] = finalValue; // Keep as string if parsing fails
+      }
+    } else {
+      formData[key] = finalValue;
+    }
   });
   
   return formData;

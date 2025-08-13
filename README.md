@@ -269,3 +269,9 @@ For technical issues or questions:
 ---
 
 **Note**: This is a development version with local storage. Production deployment requires additional security measures and proper data storage solutions. 
+
+
+Admin Id & Password:
+--------------------
+admin@corsep.com
+corsep123

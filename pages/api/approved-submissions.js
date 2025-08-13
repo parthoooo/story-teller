@@ -26,6 +26,10 @@ export default async function handler(req, res) {
       'content.audioRecording.filename': 1,
       'content.audioRecording.duration': 1,
       'content.audioRecording.size': 1,
+      'content.audioRecording.transcriptGenerated': 1,
+      'content.audioRecording.fullTranscript': 1,
+      'content.audioRecording.wordTimings': 1,
+      'content.audioRecording.transcriptConfidence': 1,
       'submittedAt': 1,
       'procResponses': 1
     })
@@ -50,7 +54,12 @@ export default async function handler(req, res) {
       audioDuration: submission.content.audioRecording.duration,
       audioSize: submission.content.audioRecording.size,
       submittedAt: submission.submittedAt,
-      procResponses: submission.procResponses
+      procResponses: submission.procResponses,
+      // Transcript data
+      transcriptGenerated: submission.content.audioRecording.transcriptGenerated || false,
+      fullTranscript: submission.content.audioRecording.fullTranscript || '',
+      wordTimings: submission.content.audioRecording.wordTimings || [],
+      transcriptConfidence: submission.content.audioRecording.transcriptConfidence || 0
     }));
 
     res.status(200).json({

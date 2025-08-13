@@ -167,6 +167,14 @@ const SubmitForm = () => {
   };
 
   const handleAudioRecorded = (audioBlob) => {
+    console.log('🎤 Audio Recorded Debug:', {
+      audioBlob,
+      audioBlobKeys: audioBlob ? Object.keys(audioBlob) : 'null',
+      hasBlob: audioBlob && audioBlob.blob,
+      hasBlobData: audioBlob && audioBlob.blobData,
+      hasBlobURL: audioBlob && audioBlob.blobURL
+    });
+    
     setFormData(prev => ({
       ...prev,
       audioRecording: audioBlob
@@ -186,6 +194,20 @@ const SubmitForm = () => {
     e.preventDefault();
     
     if (isSubmitting) return;
+    
+    // Wait a bit to ensure state updates have completed
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Debug form data before validation
+    console.log('📋 Form Data Before Validation:', {
+      hasAudioRecording: !!formData.audioRecording,
+      audioRecordingType: typeof formData.audioRecording,
+      audioRecordingHasBlobData: formData.audioRecording?.blobData ? 'YES' : 'NO',
+      audioRecordingHasBlob: formData.audioRecording?.blob ? 'YES' : 'NO',
+      uploadedFilesCount: formData.uploadedFiles?.length || 0,
+      textStoryLength: formData.textStory?.length || 0,
+      fullAudioRecording: formData.audioRecording
+    });
     
     // Validate form
     const validation = validateForm(formData);
@@ -542,7 +564,7 @@ const SubmitForm = () => {
 
           {/* Text Story */}
           <div className="form-group">
-            <label htmlFor="textStory">Written Story</label>
+            <label htmlFor="textStory">Written Story <span className="optional-label">(Optional)</span></label>
             <p className="help-text">Alternatively, you can write your story here</p>
             <textarea
               id="textStory"
@@ -796,6 +818,13 @@ const SubmitForm = () => {
           color: #666;
           font-size: 0.9rem;
           margin-bottom: 10px;
+        }
+
+        .optional-label {
+          font-size: 0.8rem;
+          color: #888;
+          font-weight: normal;
+          font-style: italic;
         }
 
         .form-group input,

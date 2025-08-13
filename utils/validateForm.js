@@ -31,9 +31,25 @@ export const validateForm = (formData) => {
   }
 
   // Content validation - at least one form of content required
-  const hasAudioRecording = formData.audioRecording && formData.audioRecording.blob;
+  // Check for audio recording - match exactly what the form submission expects
+  const hasAudioRecording = formData.audioRecording && 
+    (formData.audioRecording.blobData || formData.audioRecording.blob);
+  
   const hasFileUpload = formData.uploadedFiles && formData.uploadedFiles.length > 0;
   const hasTextStory = formData.textStory && formData.textStory.trim() !== '';
+
+  // Debug logging
+  console.log('🔍 Validation Debug:', {
+    audioRecording: formData.audioRecording,
+    audioRecordingType: typeof formData.audioRecording,
+    hasAudioRecording,
+    hasBlobData: formData.audioRecording?.blobData ? 'YES' : 'NO',
+    hasBlob: formData.audioRecording?.blob ? 'YES' : 'NO',
+    blobDataLength: formData.audioRecording?.blobData?.length || 0,
+    hasFileUpload,
+    hasTextStory,
+    audioRecordingKeys: formData.audioRecording ? Object.keys(formData.audioRecording) : null
+  });
 
   if (!hasAudioRecording && !hasFileUpload && !hasTextStory) {
     errors.content = 'Please provide your story through audio recording, file upload, or text entry';
