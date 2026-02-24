@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { serialize } from 'cookie';
 import { authenticateAdmin } from '../../../services/adminService';
+import { logger } from '../../../utils/logger';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const TOKEN_NAME = 'adminToken';
@@ -15,6 +16,7 @@ export default async function handler(req, res) {
     const { username, password } = req.body;
 
     if (!username || !password) {
+      logger.warn('admin_login_validation_failed', { reason: 'missing_credentials' });
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
@@ -22,6 +24,7 @@ export default async function handler(req, res) {
     const admin = await authenticateAdmin(username, password);
 
     if (!admin) {
+      logger.warn('admin_login_failed', { usernameOrEmail: username });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -50,6 +53,8 @@ export default async function handler(req, res) {
       })
     );
 
+    logger.info('admin_login_success', { adminId: String(admin._id), username: admin.username });
+
     res.status(200).json({
       message: 'Login successful',
       admin: {
@@ -62,7 +67,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('admin_login_error', { error });
     res.status(500).json({ error: 'Server error' });
   }
 } 
