@@ -12,11 +12,23 @@ export default function AdminLogin() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check if already logged in
-    const token = localStorage.getItem('adminToken');
-    if (token) {
-      router.push('/admin/dashboard');
-    }
+    // On mount, attempt to hit a protected endpoint to see if we're already authenticated via cookie
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/admin/me', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          router.push('/admin/dashboard');
+        }
+      } catch (e) {
+        // Silent fail; user will just stay on login page
+      }
+    };
+
+    checkAuth();
   }, [router]);
 
   const handleChange = (e) => {
@@ -37,14 +49,13 @@ export default function AdminLogin() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem('adminToken', data.token);
-        localStorage.setItem('adminUser', JSON.stringify(data.admin));
         router.push('/admin/dashboard');
       } else {
         setError(data.error || 'Login failed');
