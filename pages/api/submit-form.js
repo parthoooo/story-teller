@@ -4,8 +4,9 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import connectDB from '../../lib/mongodb';
 import Submission from '../../models/Submission';
-import { validateForm } from '../../utils/validateForm';
+import { validateForm, sanitizeInput } from '../../utils/validateForm';
 import { sendConfirmationEmail } from '../../utils/emailStub';
+import { logger } from '../../utils/logger';
 
 // Disable Next.js body parsing to handle file uploads
 export const config = {
@@ -77,20 +78,17 @@ export default async function handler(req, res) {
     formData.uploadedFiles = files.uploadedFiles ? 
       (Array.isArray(files.uploadedFiles) ? files.uploadedFiles : [files.uploadedFiles]) : [];
     
-    // Debug server-side form data
-    console.log('🔧 Server-side Form Data:', {
+    logger.info('submission_form_parsed', {
       keys: Object.keys(formData),
-      audioRecording: formData.audioRecording ? 'EXISTS' : 'MISSING',
-      audioRecordingType: typeof formData.audioRecording,
-      audioRecordingLength: formData.audioRecording?.length || 0,
-      textStory: formData.textStory ? 'EXISTS' : 'MISSING',
-      uploadedFilesCount: formData.uploadedFiles?.length || 0
+      hasAudioRecording: !!formData.audioRecording,
+      hasTextStory: !!formData.textStory,
+      uploadedFilesCount: formData.uploadedFiles?.length || 0,
     });
 
     // Validate form data
     const validation = validateForm(formData);
     if (!validation.isValid) {
-      console.log('❌ Server-side validation failed:', validation.errors);
+      logger.warn('submission_validation_failed', { errors: validation.errors });
       return res.status(400).json({ 
         error: 'Validation failed', 
         errors: validation.errors 
@@ -142,7 +140,10 @@ export default async function handler(req, res) {
           // Basic safety limit on recorded audio size (in bytes)
           const maxAudioBytes = 50 * 1024 * 1024; // 50MB
           if (audioBuffer.length > maxAudioBytes) {
-            console.error('❌ Audio recording too large, rejecting submission');
+            logger.warn('submission_audio_too_large', {
+              sizeBytes: audioBuffer.length,
+              maxBytes: maxAudioBytes,
+            });
             return res.status(400).json({ error: 'Audio recording too large' });
           }
           
@@ -165,10 +166,14 @@ export default async function handler(req, res) {
             size: audioBuffer.length
           };
           
-          console.log('✅ Audio recording saved:', filename);
+          logger.info('submission_audio_saved', {
+            filename,
+            sizeBytes: audioBuffer.length,
+            durationSeconds: audioRecordingData.duration || 0,
+          });
         }
       } catch (error) {
-        console.error('❌ Error saving audio recording:', error);
+        logger.error('submission_audio_save_error', { error });
         // Fallback for basic audio recording tracking
         audioData.hasRecording = true;
       }
@@ -178,19 +183,19 @@ export default async function handler(req, res) {
     const submission = new Submission({
       submittedAt: new Date(),
       personalInfo: {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        zipCode: formData.zipCode
+        firstName: sanitizeInput(formData.firstName),
+        lastName: sanitizeInput(formData.lastName),
+        email: sanitizeInput(formData.email),
+        zipCode: sanitizeInput(formData.zipCode)
       },
       content: {
-        textStory: formData.textStory || '',
+        textStory: sanitizeInput(formData.textStory || ''),
         audioRecording: audioData,
         uploadedFiles: uploadedFiles
       },
       procResponses: {
-        question1: formData.procQuestion1 || '',
-        question2: formData.procQuestion2 || ''
+        question1: sanitizeInput(formData.procQuestion1 || ''),
+        question2: sanitizeInput(formData.procQuestion2 || '')
       },
       consent: {
         agreed: formData.consentAgreed === 'true',
@@ -205,18 +210,17 @@ export default async function handler(req, res) {
       status: 'pending'
     });
 
-    // Debug submission data before saving
-    console.log('💾 Saving submission with audioRecording:', {
+    logger.info('submission_saving', {
       hasRecording: audioData.hasRecording,
       filename: audioData.filename,
       duration: audioData.duration,
-      size: audioData.size
+      size: audioData.size,
     });
     
     // Save to MongoDB
     await submission.save();
     
-    console.log('✅ Submission saved:', submission._id);
+    logger.info('submission_saved', { submissionId: String(submission._id) });
 
     // Send confirmation email
     try {
@@ -234,18 +238,16 @@ export default async function handler(req, res) {
         submittedAt: submission.submittedAt
       });
     } catch (emailError) {
-      console.error('❌ Error sending confirmation email:', emailError);
+      logger.error('submission_confirmation_email_error', { error: emailError });
     }
 
     // Log submission event for analytics
-    console.log('📊 SUBMISSION EVENT:', {
-      timestamp: new Date().toISOString(),
-      eventType: 'submission_completed',
-      submissionId: submission._id,
+    logger.info('submission_completed', {
+      submissionId: String(submission._id),
       hasAudio: audioData.hasRecording,
       hasFiles: uploadedFiles.length > 0,
       hasText: formData.textStory ? formData.textStory.length > 0 : false,
-      fileCount: uploadedFiles.length
+      fileCount: uploadedFiles.length,
     });
 
     res.status(200).json({
@@ -255,7 +257,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('❌ Submission error:', error);
+    logger.error('submission_error', { error });
     res.status(500).json({ error: 'Server error processing submission' });
   }
 }

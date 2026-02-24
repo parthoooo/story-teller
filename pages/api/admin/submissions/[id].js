@@ -1,6 +1,8 @@
 import connectDB from '../../../../lib/mongodb';
 import Submission from '../../../../models/Submission';
 import { withAuth } from '../../../../middleware/adminAuth';
+import { sanitizeInput } from '../../../../utils/validateForm';
+import { logger } from '../../../../utils/logger';
 
 async function handler(req, res) {
   const { id } = req.query;
@@ -14,15 +16,22 @@ async function handler(req, res) {
       // Validate status
       const validStatuses = ['pending', 'reviewed', 'approved', 'rejected'];
       if (!validStatuses.includes(status)) {
+        logger.warn('admin_update_submission_validation_failed', {
+          submissionId: id,
+          status,
+          adminId: req.admin?._id ? String(req.admin._id) : undefined,
+        });
         return res.status(400).json({ error: 'Invalid status' });
       }
+
+      const safeAdminNotes = adminNotes ? sanitizeInput(adminNotes) : '';
 
       // Update submission
       const submission = await Submission.findByIdAndUpdate(
         id,
         {
           status,
-          adminNotes: adminNotes || '',
+          adminNotes: safeAdminNotes,
           reviewedAt: new Date(),
           reviewedBy: req.admin.username
         },
@@ -33,7 +42,12 @@ async function handler(req, res) {
         return res.status(404).json({ error: 'Submission not found' });
       }
 
-      console.log(`✅ Submission ${id} updated to ${status} by ${req.admin.username}`);
+      logger.info('admin_update_submission', {
+        submissionId: id,
+        status,
+        adminId: req.admin?._id ? String(req.admin._id) : undefined,
+        username: req.admin?.username,
+      });
 
       res.status(200).json({
         message: 'Submission updated successfully',
@@ -41,7 +55,7 @@ async function handler(req, res) {
       });
 
     } catch (error) {
-      console.error('Update submission error:', error);
+      logger.error('admin_update_submission_error', { error, submissionId: id });
       res.status(500).json({ error: 'Server error' });
     }
   } else if (req.method === 'DELETE') {

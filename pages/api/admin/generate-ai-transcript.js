@@ -4,26 +4,26 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import connectDB from '../../../lib/mongodb';
 import Submission from '../../../models/Submission';
+import { withAuth } from '../../../middleware/adminAuth';
+import { logger } from '../../../utils/logger';
 
 const execAsync = promisify(exec);
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // Simple admin check - you can enhance this with proper auth later
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ error: 'No authorization token provided' });
-    }
-
     await connectDB();
 
     const { submissionId, audioFilename } = req.body;
 
     if (!submissionId || !audioFilename) {
+      logger.warn('admin_generate_transcript_validation_failed', {
+        adminId: req.admin?._id ? String(req.admin._id) : undefined,
+        reason: 'missing_params',
+      });
       return res.status(400).json({ error: 'Missing submissionId or audioFilename' });
     }
 
@@ -47,21 +47,28 @@ export default async function handler(req, res) {
     }
     
     if (!submission) {
-      console.log('❌ Submission not found for ID:', submissionId);
+      logger.warn('admin_generate_transcript_submission_not_found', { submissionId });
       return res.status(404).json({ error: 'Submission not found' });
     }
     
-    console.log('✅ Found submission:', submission._id);
+    logger.info('admin_generate_transcript_submission_found', {
+      submissionId,
+      dbId: String(submission._id),
+      adminId: req.admin?._id ? String(req.admin._id) : undefined,
+    });
 
     // Check if audio file exists
     const audioPath = path.join(process.cwd(), 'public', 'uploads', audioFilename);
     if (!fs.existsSync(audioPath)) {
+      logger.warn('admin_generate_transcript_audio_missing', { submissionId, audioFilename });
       return res.status(404).json({ error: 'Audio file not found' });
     }
-
-    console.log('🤖 Starting AI transcription for:', audioFilename);
-    console.log('🔍 Looking for submission ID:', submissionId);
-    console.log('🔍 ID type check - isObjectId:', /^[0-9a-fA-F]{24}$/.test(submissionId));
+    
+    logger.info('admin_generate_transcript_started', {
+      submissionId,
+      audioFilename,
+      adminId: req.admin?._id ? String(req.admin._id) : undefined,
+    });
 
     // Choose transcription method:
     // 1. For FREE local Whisper (NOW WORKING!)
@@ -79,7 +86,11 @@ export default async function handler(req, res) {
 
     await submission.save();
 
-    console.log('✅ AI Transcript saved for submission:', submissionId);
+    logger.info('admin_generate_transcript_saved', {
+      submissionId,
+      words: transcript.wordTimings?.length || 0,
+      confidence: transcript.confidence,
+    });
 
     res.status(200).json({
       message: 'AI transcript generated successfully',
@@ -90,8 +101,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('❌ AI transcript generation error:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('admin_generate_transcript_error', { error });
     res.status(500).json({ 
       error: 'Server error generating AI transcript',
       details: error.message,
@@ -99,6 +109,8 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default withAuth(handler);
 
 // Demo transcript generator - replace with real Whisper API call
 async function generateDemoTranscript(audioPath, filename) {
