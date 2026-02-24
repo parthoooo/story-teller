@@ -63,5 +63,5 @@ describe('validateForm', () => {
     expect(isValid).toBe(true);
     expect(Object.keys(errors).length).toBe(0);
   });
-}
+});
 
