@@ -1,12 +1,18 @@
 import jwt from 'jsonwebtoken';
-import connectDB from '../lib/mongodb';
-import Admin from '../models/Admin';
+import { getAdminById } from '../services/adminService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const TOKEN_NAME = 'adminToken';
 
 export default async function adminAuth(req, res, next) {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    // Prefer secure HTTP-only cookie; fall back to Authorization header for backwards compatibility
+    const cookieToken = req.cookies?.[TOKEN_NAME];
+    const headerToken = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.replace('Bearer ', '')
+      : undefined;
+
+    const token = cookieToken || headerToken;
     
     if (!token) {
       return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -14,8 +20,7 @@ export default async function adminAuth(req, res, next) {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    await connectDB();
-    const admin = await Admin.findById(decoded.id).select('-password');
+    const admin = await getAdminById(decoded.id);
     
     if (!admin || !admin.isActive) {
       return res.status(401).json({ error: 'Access denied. Invalid token.' });

@@ -1,8 +1,10 @@
-import connectDB from '../../../lib/mongodb';
-import Admin from '../../../models/Admin';
 import jwt from 'jsonwebtoken';
+import { serialize } from 'cookie';
+import { authenticateAdmin } from '../../../services/adminService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const TOKEN_NAME = 'adminToken';
+const TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -10,36 +12,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    await connectDB();
-
     const { username, password } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    // Find admin user
-    const admin = await Admin.findOne({ 
-      $or: [
-        { username: username },
-        { email: username }
-      ],
-      isActive: true
-    });
+    // Authenticate admin user via service layer
+    const admin = await authenticateAdmin(username, password);
 
     if (!admin) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    // Check password
-    const isMatch = await admin.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Update last login
-    admin.lastLogin = new Date();
-    await admin.save();
 
     // Generate JWT token
     const token = jwt.sign(
@@ -49,12 +33,25 @@ export default async function handler(req, res) {
         role: admin.role 
       },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: TOKEN_MAX_AGE_SECONDS }
+    );
+
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    // Set secure HTTP-only cookie with the JWT
+    res.setHeader(
+      'Set-Cookie',
+      serialize(TOKEN_NAME, token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: TOKEN_MAX_AGE_SECONDS,
+      })
     );
 
     res.status(200).json({
       message: 'Login successful',
-      token,
       admin: {
         id: admin._id,
         username: admin.username,

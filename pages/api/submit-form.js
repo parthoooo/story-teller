@@ -34,8 +34,34 @@ export default async function handler(req, res) {
       keepExtensions: true,
       maxFileSize: 50 * 1024 * 1024, // 50MB per file
       maxTotalFileSize: 100 * 1024 * 1024, // 100MB total
+      filter: ({ mimetype, originalFilename }) => {
+        // Allow only common safe document/image/audio types
+        const allowedMimeTypes = [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'image/jpeg',
+          'image/png',
+          'image/gif',
+          'audio/mpeg',
+          'audio/wav',
+          'audio/webm',
+          'audio/ogg',
+        ];
+
+        const isAllowed = mimetype ? allowedMimeTypes.includes(mimetype) : false;
+
+        if (!isAllowed) {
+          console.warn('Blocked uploaded file due to disallowed mimetype:', {
+            mimetype,
+            originalFilename,
+          });
+        }
+
+        return isAllowed;
+      },
       filename: (name, ext, path, form) => {
-        // Generate unique filename
+        // Generate unique filename (never trust original name)
         const timestamp = Date.now();
         const uniqueId = uuidv4().split('-')[0];
         return `${timestamp}_${uniqueId}${ext}`;
@@ -112,6 +138,13 @@ export default async function handler(req, res) {
         if (audioRecordingData.blobData) {
           // Convert base64 to buffer
           const audioBuffer = Buffer.from(audioRecordingData.blobData, 'base64');
+
+          // Basic safety limit on recorded audio size (in bytes)
+          const maxAudioBytes = 50 * 1024 * 1024; // 50MB
+          if (audioBuffer.length > maxAudioBytes) {
+            console.error('❌ Audio recording too large, rejecting submission');
+            return res.status(400).json({ error: 'Audio recording too large' });
+          }
           
           // Generate filename
           const timestamp = Date.now();

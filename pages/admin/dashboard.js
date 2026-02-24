@@ -17,22 +17,41 @@ export default function AdminDashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check authentication
-    const token = localStorage.getItem('adminToken');
-    const user = localStorage.getItem('adminUser');
-    
-    if (!token || !user) {
-      router.push('/admin/login');
-      return;
-    }
+    // On mount or filter change, ensure we are authenticated and then load submissions
+    const ensureAuthenticatedAndLoad = async () => {
+      try {
+        const meResponse = await fetch('/api/admin/me', {
+          method: 'GET',
+          credentials: 'include',
+        });
 
-    setAdminUser(JSON.parse(user));
-    loadSubmissions();
+        if (meResponse.status === 401) {
+          router.push('/admin/login');
+          return;
+        }
+
+        if (!meResponse.ok) {
+          setError('Failed to load admin session');
+          setLoading(false);
+          return;
+        }
+
+        const meData = await meResponse.json();
+        setAdminUser(meData.admin || null);
+        await loadSubmissions();
+      } catch (e) {
+        console.error('Auth check error:', e);
+        setError('Network error. Please try again.');
+        setLoading(false);
+      }
+    };
+
+    ensureAuthenticatedAndLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, filters]);
 
   const loadSubmissions = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
       const params = new URLSearchParams({
         page: filters.page.toString(),
         status: filters.status,
@@ -40,9 +59,7 @@ export default function AdminDashboard() {
       });
 
       const response = await fetch(`/api/admin/submissions?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -53,8 +70,6 @@ export default function AdminDashboard() {
         setStatusStats(data.statusStats);
       } else {
         if (response.status === 401) {
-          localStorage.removeItem('adminToken');
-          localStorage.removeItem('adminUser');
           router.push('/admin/login');
         } else {
           setError(data.error || 'Failed to load submissions');
@@ -69,9 +84,13 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminUser');
-    router.push('/admin/login');
+    // Logging out is handled via API to clear the cookie; fall back to redirect.
+    fetch('/api/admin/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).finally(() => {
+      router.push('/admin/login');
+    });
   };
 
   const handleFilterChange = (key, value) => {
@@ -119,14 +138,12 @@ export default function AdminDashboard() {
 
   const handleStatusUpdate = async (submissionId, newStatus) => {
     try {
-      const token = localStorage.getItem('adminToken');
-      
       const response = await fetch(`/api/admin/submissions/${submissionId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
+        credentials: 'include',
         body: JSON.stringify({ status: newStatus })
       });
 
@@ -165,14 +182,12 @@ export default function AdminDashboard() {
     }
 
     try {
-      const token = localStorage.getItem('adminToken');
-      
       const response = await fetch('/api/admin/submissions/delete-submission', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
+        credentials: 'include',
         body: JSON.stringify({ submissionId })
       });
 
@@ -227,13 +242,12 @@ export default function AdminDashboard() {
     );
 
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/generate-ai-transcript', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           submissionId,
           audioFilename
@@ -286,13 +300,12 @@ export default function AdminDashboard() {
 
   const saveTranscript = async (submissionId, transcript) => {
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/submissions/update-transcript', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           submissionId,
           transcript,

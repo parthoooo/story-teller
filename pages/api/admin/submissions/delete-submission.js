@@ -2,8 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import connectDB from '../../../../lib/mongodb';
 import Submission from '../../../../models/Submission';
+import { withAuth } from '../../../../middleware/adminAuth';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'DELETE') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -85,3 +86,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default withAuth(handler);
