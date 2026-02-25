@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 
@@ -9,14 +9,45 @@ export default function AdminSetup() {
     password: '',
     confirmPassword: ''
   });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isAuthed, setIsAuthed] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/admin/me', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        setIsAuthed(res.ok);
+      } catch {
+        setIsAuthed(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  const handlePasswordChange = (e) => {
+    setPasswordForm({
+      ...passwordForm,
       [e.target.name]: e.target.value
     });
   };
@@ -31,8 +62,8 @@ export default function AdminSetup() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters');
       return;
     }
 
@@ -69,6 +100,66 @@ export default function AdminSetup() {
     }
   };
 
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setError('New passwords do not match');
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 8) {
+      setError('New password must be at least 8 characters');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/update-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess('Password updated successfully');
+        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      } else {
+        setError(data.error || 'Failed to update password');
+      }
+    } catch (err) {
+      console.error('Update password error:', err);
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (checkingAuth) {
+    return (
+      <>
+        <Head>
+          <title>Admin Setup - CORSEP Audio Form</title>
+        </Head>
+        <div className="admin-setup">
+          <div className="setup-container">
+            <div className="setup-header">
+              <h1>🔧 Admin Setup</h1>
+              <p>Checking admin status...</p>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <Head>
@@ -79,9 +170,14 @@ export default function AdminSetup() {
         <div className="setup-container">
           <div className="setup-header">
             <h1>🔧 Admin Setup</h1>
-            <p>Create your initial admin account to manage form submissions</p>
+            {isAuthed ? (
+              <p>Change your admin password</p>
+            ) : (
+              <p>Create your initial admin account to manage form submissions</p>
+            )}
           </div>
 
+          {!isAuthed ? (
           <form onSubmit={handleSubmit} className="setup-form">
             <div className="form-group">
               <label htmlFor="username">Username</label>
@@ -146,6 +242,58 @@ export default function AdminSetup() {
               {loading ? 'Creating Admin...' : 'Create Admin Account'}
             </button>
           </form>
+          ) : (
+          <form onSubmit={handlePasswordSubmit} className="setup-form">
+            <div className="form-group">
+              <label htmlFor="currentPassword">Current Password</label>
+              <input
+                type="password"
+                id="currentPassword"
+                name="currentPassword"
+                value={passwordForm.currentPassword}
+                onChange={handlePasswordChange}
+                required
+                disabled={loading}
+                placeholder="Enter current password"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="newPassword">New Password</label>
+              <input
+                type="password"
+                id="newPassword"
+                name="newPassword"
+                value={passwordForm.newPassword}
+                onChange={handlePasswordChange}
+                required
+                disabled={loading}
+                placeholder="Enter new password (min 8 characters)"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="confirmPassword">Confirm New Password</label>
+              <input
+                type="password"
+                id="confirmPassword"
+                name="confirmPassword"
+                value={passwordForm.confirmPassword}
+                onChange={handlePasswordChange}
+                required
+                disabled={loading}
+                placeholder="Confirm new password"
+              />
+            </div>
+
+            {error && <div className="error-message">{error}</div>}
+            {success && <div className="success-message">{success}</div>}
+
+            <button type="submit" disabled={loading} className="setup-btn">
+              {loading ? 'Updating Password...' : 'Update Password'}
+            </button>
+          </form>
+          )}
         </div>
       </div>
 

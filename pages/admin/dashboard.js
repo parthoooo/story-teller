@@ -443,7 +443,7 @@ export default function AdminDashboard() {
         {/* Header */}
         <header className="dashboard-header">
           <div className="header-content">
-            <h1> <a href='/'>📊 Admin Dashboard</a></h1>
+            <h1>📊 Admin Dashboard</h1>
             <div className="header-actions">
               <span className="user-info">Welcome, {adminUser?.username}</span>
               <button onClick={handleLogout} className="logout-btn">Logout</button>
