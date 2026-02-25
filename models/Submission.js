@@ -71,6 +71,14 @@ const SubmissionSchema = new mongoose.Schema({
   reviewedBy: {
     type: String,
     default: ''
+  },
+  tags: {
+    type: [String],
+    default: []
+  },
+  collectionSlug: {
+    type: String,
+    default: ''
   }
 }, {
   timestamps: true
@@ -80,5 +88,7 @@ const SubmissionSchema = new mongoose.Schema({
 SubmissionSchema.index({ submittedAt: -1 });
 SubmissionSchema.index({ 'personalInfo.email': 1 });
 SubmissionSchema.index({ status: 1 });
+SubmissionSchema.index({ tags: 1 });
+SubmissionSchema.index({ collectionSlug: 1 });
 
 export default mongoose.models.Submission || mongoose.model('Submission', SubmissionSchema); 

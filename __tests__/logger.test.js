@@ -48,5 +48,5 @@ describe('logger', () => {
     expect(payload.event).toBe('error_event');
     expect(payload.error).toBeDefined();
   });
-}
+});
 

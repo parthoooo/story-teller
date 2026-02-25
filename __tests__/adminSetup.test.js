@@ -4,17 +4,19 @@ jest.mock('../lib/mongodb', () => jest.fn(async () => {}));
 
 const mockSave = jest.fn(async () => {});
 
-jest.mock('../models/Admin', () => ({
-  __esModule: true,
-  default: {
-    countDocuments: jest.fn(async () => 0),
-  },
-  // For `new Admin()`
-  default: function Admin(doc) {
+jest.mock('../models/Admin', () => {
+  const Admin = function Admin(doc) {
     Object.assign(this, doc);
     this.save = mockSave;
-  },
-}));
+  };
+
+  Admin.countDocuments = jest.fn(async () => 0);
+
+  return {
+    __esModule: true,
+    default: Admin,
+  };
+});
 
 describe('admin setup API', () => {
   const makeRes = () => {

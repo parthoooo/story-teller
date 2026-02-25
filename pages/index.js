@@ -7,32 +7,35 @@ import ProgressiveTranscript from '../components/ProgressiveTranscript';
 
 const HomePage = () => {
   const [approvedSubmissions, setApprovedSubmissions] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [filterOptions, setFilterOptions] = useState({ tags: [] });
+  const [filters, setFilters] = useState({ tag: '', collection: '' });
   const [loading, setLoading] = useState(true);
   const audioRefs = useRef({});
 
   useEffect(() => {
-    loadApprovedSubmissions();
+    Promise.all([
+      fetch('/api/collections').then((r) => r.json()),
+      fetch('/api/filter-options').then((r) => r.json())
+    ]).then(([colData, optData]) => {
+      if (colData.collections) setCollections(colData.collections);
+      if (optData.tags) setFilterOptions((o) => ({ ...o, tags: optData.tags }));
+    });
   }, []);
 
+  useEffect(() => {
+    loadApprovedSubmissions();
+  }, [filters.tag, filters.collection]);
+
   const loadApprovedSubmissions = async () => {
+    setLoading(true);
     try {
-      console.log('🔄 Loading approved submissions...');
-      const response = await fetch('/api/approved-submissions?limit=6');
+      const params = new URLSearchParams({ limit: 24 });
+      if (filters.tag) params.set('tag', filters.tag);
+      if (filters.collection) params.set('collection', filters.collection);
+      const response = await fetch(`/api/approved-submissions?${params}`);
       const data = await response.json();
-      
-      if (response.ok) {
-        console.log('✅ Submissions loaded:', data.submissions?.length || 0, 'submissions');
-        // Log transcription status for debugging
-        data.submissions?.forEach(sub => {
-          console.log(`📝 ${sub.firstName}: transcriptGenerated=${sub.transcriptGenerated}, hasTranscript=${!!sub.fullTranscript}, wordTimings=${sub.wordTimings?.length || 0}`);
-          if (sub.wordTimings?.length > 0) {
-            console.log(`🎯 First timing for ${sub.firstName}:`, sub.wordTimings[0]);
-          }
-        });
-        setApprovedSubmissions(data.submissions);
-      } else {
-        console.error('Failed to load approved submissions:', data.error);
-      }
+      if (response.ok) setApprovedSubmissions(data.submissions || []);
     } catch (error) {
       console.error('Error loading approved submissions:', error);
     } finally {
@@ -84,10 +87,46 @@ const HomePage = () => {
       </header>
 
       <main className="main-content">
+        {/* Collections section */}
+        {collections.length > 0 && (
+          <section className="collections-section">
+            <h2>📂 Collections</h2>
+            <p>Browse stories by collection</p>
+            <div className="collections-list">
+              {collections.map((c) => (
+                <Link key={c.slug} href={`/collections/${c.slug}`} className="collection-chip">
+                  {c.name}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Approved Submissions Section */}
         <section className="approved-submissions-section">
           <h2>📻 Featured Stories</h2>
           <p>Listen to approved stories from our community members</p>
+
+          <div className="filters-bar">
+            <label>
+              Tag
+              <select value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))}>
+                <option value="">All</option>
+                {filterOptions.tags.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Collection
+              <select value={filters.collection} onChange={(e) => setFilters((f) => ({ ...f, collection: e.target.value }))}>
+                <option value="">All</option>
+                {collections.map((c) => (
+                  <option key={c.slug} value={c.slug}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           
           {loading ? (
             <div className="loading-spinner">Loading stories...</div>
@@ -100,27 +139,27 @@ const HomePage = () => {
               {approvedSubmissions.map((submission) => (
                 <div key={submission.id} className="story-card">
                   <div className="story-header">
-                    <h3>{submission.firstName} {submission.lastName}</h3>
+                    <h3>
+                      <Link href={`/stories/${submission.id}`}>{submission.firstName} {submission.lastName}</Link>
+                    </h3>
                     <span className="story-date">{formatDate(submission.submittedAt)}</span>
+                    {(submission.tags?.length > 0 || submission.collectionSlug) && (
+                      <div className="story-tags-inline">
+                        {submission.tags?.map((t) => <span key={t} className="tag">{t}</span>)}
+                        {submission.collectionSlug && <span className="tag collection">{submission.collectionSlug}</span>}
+                      </div>
+                    )}
                   </div>
                   
                   <div className="story-audio-section">
                     {/* Transcript Card - Shows ABOVE the audio player */}
                     {submission.transcriptGenerated && submission.fullTranscript ? (
-                      // Real transcript with word timings
-                      <>
-                        {console.log(`🔍 Homepage passing timings for ${submission.firstName}:`, {
-                          wordTimingsLength: submission.wordTimings?.length || 0,
-                          firstTiming: submission.wordTimings?.[0],
-                          submissionId: submission.id
-                        })}
-                        <ProgressiveTranscript
+                      <ProgressiveTranscript
                           audioRef={{ current: audioRefs.current[submission.id] }}
                           transcript={submission.fullTranscript}
                           timings={submission.wordTimings}
                           showAsCard={true}
                         />
-                      </>
                     ) : submission.textStory ? (
                       // Text story with demo progressive highlighting
                       <ProgressiveTranscript
@@ -169,6 +208,9 @@ const HomePage = () => {
                         <p>📝 <em>Transcript will be added by admin for progressive highlighting.</em></p>
                       </div>
                     )}
+                    <div className="story-actions">
+                      <Link href={`/stories/${submission.id}`} className="share-story-link">Share this story →</Link>
+                    </div>
                   </div>
                   
                   {(submission.procResponses.question1 || submission.procResponses.question2) && (
