@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import cookie from 'cookie';
 import { getAdminById } from '../services/adminService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
@@ -6,8 +7,9 @@ const TOKEN_NAME = 'adminToken';
 
 export default async function adminAuth(req, res, next) {
   try {
-    // Prefer secure HTTP-only cookie; fall back to Authorization header for backwards compatibility
-    const cookieToken = req.cookies?.[TOKEN_NAME];
+    const cookies = req.cookies || (req.headers.cookie ? cookie.parse(req.headers.cookie) : {});
+    const cookieToken = cookies[TOKEN_NAME];
+    // Fall back to Authorization header for backwards compatibility
     const headerToken = req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.replace('Bearer ', '')
       : undefined;

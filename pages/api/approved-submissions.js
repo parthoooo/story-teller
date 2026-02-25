@@ -12,13 +12,18 @@ export default async function handler(req, res) {
     const limit = parseInt(req.query.limit) || 10;
     const page = parseInt(req.query.page) || 1;
     const skip = (page - 1) * limit;
+    const tag = (req.query.tag || '').trim();
+    const collection = (req.query.collection || '').trim();
 
-    // Get approved submissions with audio recordings
-    const approvedSubmissions = await Submission.find({
+    const baseQuery = {
       status: 'approved',
       'content.audioRecording.hasRecording': true,
       'content.audioRecording.filename': { $ne: '' }
-    })
+    };
+    if (tag) baseQuery.tags = tag;
+    if (collection) baseQuery.collectionSlug = collection;
+
+    const approvedSubmissions = await Submission.find(baseQuery)
     .select({
       'personalInfo.firstName': 1,
       'personalInfo.lastName': 1,
@@ -31,22 +36,20 @@ export default async function handler(req, res) {
       'content.audioRecording.wordTimings': 1,
       'content.audioRecording.transcriptConfidence': 1,
       'submittedAt': 1,
-      'procResponses': 1
+      'procResponses': 1,
+      tags: 1,
+      collectionSlug: 1
     })
     .sort({ submittedAt: -1 })
     .skip(skip)
     .limit(limit)
     .lean();
 
-    const totalApproved = await Submission.countDocuments({
-      status: 'approved',
-      'content.audioRecording.hasRecording': true,
-      'content.audioRecording.filename': { $ne: '' }
-    });
+    const totalApproved = await Submission.countDocuments(baseQuery);
 
     // Format the response to be safe for public display
     const formattedSubmissions = approvedSubmissions.map(submission => ({
-      id: submission._id,
+      id: String(submission._id),
       firstName: submission.personalInfo.firstName,
       lastName: submission.personalInfo.lastName,
       textStory: submission.content.textStory,
@@ -55,7 +58,8 @@ export default async function handler(req, res) {
       audioSize: submission.content.audioRecording.size,
       submittedAt: submission.submittedAt,
       procResponses: submission.procResponses,
-      // Transcript data
+      tags: submission.tags || [],
+      collectionSlug: submission.collectionSlug || '',
       transcriptGenerated: submission.content.audioRecording.transcriptGenerated || false,
       fullTranscript: submission.content.audioRecording.fullTranscript || '',
       wordTimings: submission.content.audioRecording.wordTimings || [],

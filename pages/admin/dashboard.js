@@ -4,6 +4,7 @@ import Head from 'next/head';
 
 export default function AdminDashboard() {
   const [submissions, setSubmissions] = useState([]);
+  const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [adminUser, setAdminUser] = useState(null);
@@ -14,6 +15,8 @@ export default function AdminDashboard() {
   });
   const [pagination, setPagination] = useState({});
   const [statusStats, setStatusStats] = useState({});
+  const [newCollection, setNewCollection] = useState({ name: '', slug: '', description: '' });
+  const [savingMeta, setSavingMeta] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -38,7 +41,7 @@ export default function AdminDashboard() {
 
         const meData = await meResponse.json();
         setAdminUser(meData.admin || null);
-        await loadSubmissions();
+        await Promise.all([loadSubmissions(), loadCollections()]);
       } catch (e) {
         console.error('Auth check error:', e);
         setError('Network error. Please try again.');
@@ -49,6 +52,16 @@ export default function AdminDashboard() {
     ensureAuthenticatedAndLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, filters]);
+
+  const loadCollections = async () => {
+    try {
+      const res = await fetch('/api/admin/collections', { credentials: 'include' });
+      const data = await res.json();
+      if (res.ok && data.collections) setCollections(data.collections);
+    } catch (e) {
+      console.error('Load collections error:', e);
+    }
+  };
 
   const loadSubmissions = async () => {
     try {
@@ -91,6 +104,73 @@ export default function AdminDashboard() {
     }).finally(() => {
       router.push('/admin/login');
     });
+  };
+
+  const handleMetadataChange = (submissionId, field, value) => {
+    setSubmissions((prev) =>
+      prev.map((sub) =>
+        sub._id === submissionId ? { ...sub, [field]: value } : sub
+      )
+    );
+  };
+
+  const handleSaveMetadata = async (submission) => {
+    const tagsStr = typeof submission.tags === 'string' ? submission.tags : (submission.tags || []).join(', ');
+    const tags = tagsStr.split(',').map((t) => t.trim()).filter(Boolean);
+    setSavingMeta(submission._id);
+    try {
+      const res = await fetch(`/api/admin/submissions/${submission._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          status: submission.status,
+          adminNotes: submission.adminNotes || '',
+          tags,
+          collectionSlug: submission.collectionSlug || ''
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSubmissions((prev) =>
+          prev.map((sub) =>
+            sub._id === submission._id ? { ...sub, tags, collectionSlug: submission.collectionSlug || '' } : sub
+          )
+        );
+      } else {
+        setError(data.error || 'Failed to save metadata');
+      }
+    } catch (e) {
+      setError('Network error');
+    } finally {
+      setSavingMeta(null);
+    }
+  };
+
+  const handleCreateCollection = async (e) => {
+    e.preventDefault();
+    if (!newCollection.name.trim()) return;
+    try {
+      const res = await fetch('/api/admin/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: newCollection.name.trim(),
+          slug: (newCollection.slug || newCollection.name).trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+          description: (newCollection.description || '').trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNewCollection({ name: '', slug: '', description: '' });
+        await loadCollections();
+      } else {
+        setError(data.error || 'Failed to create collection');
+      }
+    } catch (e) {
+      setError('Network error');
+    }
   };
 
   const handleFilterChange = (key, value) => {
@@ -423,6 +503,32 @@ export default function AdminDashboard() {
         {/* Submissions Table */}
         <div className="submissions-container">
           <h2>Submissions ({pagination.totalSubmissions || 0})</h2>
+
+          {/* Create Collection */}
+          <div className="create-collection-section">
+            <h3>📂 Create collection</h3>
+            <form onSubmit={handleCreateCollection} className="create-collection-form">
+              <input
+                type="text"
+                placeholder="Collection name"
+                value={newCollection.name}
+                onChange={(e) => setNewCollection((c) => ({ ...c, name: e.target.value }))}
+              />
+              <input
+                type="text"
+                placeholder="Slug (e.g. youth-2025)"
+                value={newCollection.slug}
+                onChange={(e) => setNewCollection((c) => ({ ...c, slug: e.target.value }))}
+              />
+              <input
+                type="text"
+                placeholder="Description (optional)"
+                value={newCollection.description}
+                onChange={(e) => setNewCollection((c) => ({ ...c, description: e.target.value }))}
+              />
+              <button type="submit" className="btn-small btn-primary">Create</button>
+            </form>
+          </div>
           
           {submissions.length === 0 ? (
             <div className="no-submissions">No submissions found.</div>
@@ -553,6 +659,42 @@ export default function AdminDashboard() {
                       <div className="consent-info">
                         <strong>Consent:</strong> {submission.consent.agreed ? 'Yes' : 'No'}
                         {submission.consent.continuedEngagement && ' | Continued Engagement: Yes'}
+                      </div>
+
+                      {/* Tags, language, collection */}
+                      <div className="metadata-section">
+                        <strong>Tags &amp; collection</strong>
+                        <div className="metadata-fields">
+                          <label>
+                            Tags (comma-separated):
+                            <input
+                              type="text"
+                              value={Array.isArray(submission.tags) ? submission.tags.join(', ') : (submission.tags || '')}
+                              onChange={(e) => handleMetadataChange(submission._id, 'tags', e.target.value)}
+                              placeholder="e.g. health, joy"
+                            />
+                          </label>
+                          <label>
+                            Collection:
+                            <select
+                              value={submission.collectionSlug || ''}
+                              onChange={(e) => handleMetadataChange(submission._id, 'collectionSlug', e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {collections.map((c) => (
+                                <option key={c._id} value={c.slug}>{c.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            className="btn-small btn-primary"
+                            disabled={savingMeta === submission._id}
+                            onClick={() => handleSaveMetadata(submission)}
+                          >
+                            {savingMeta === submission._id ? 'Saving…' : '💾 Save tags & collection'}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Admin Actions */}
